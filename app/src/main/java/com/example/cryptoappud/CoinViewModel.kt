@@ -12,6 +12,7 @@ import com.google.gson.Gson
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.schedulers.Schedulers
+import java.util.concurrent.TimeUnit
 
 class CoinViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -28,15 +29,21 @@ class CoinViewModel(application: Application) : AndroidViewModel(application) {
         loadData()
     }
 
-    fun loadData() {
-        val disposable = ApiFactory.apiService.getTopCoinsInfo()
+     fun loadData() {
+        val disposable = ApiFactory.apiService.getTopCoinsInfo(limit = 50)
+            .map { it.data?.map { it.coinInfo?.name }?.joinToString(",") }
+            .flatMap { ApiFactory.apiService.getFullPriceInfo(fSyms = it) }
+            .map { getPriceListFromRawData(it) }
+            .delaySubscription(10, TimeUnit.SECONDS)
+            .repeat()
+            .retry()
             .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
             .subscribe({
-            Log.d("TEST_OF_LOADING_DATA", "Success: $it")
-        }, {
-            Log.d("TEST_OF_LOADING_DATA", "Failure: ${it.message}")
-        })
+                db.coinPriceInfoDao().insertPriceList(it)
+                Log.d("TEST_OF_LOADING_DATA", "Success: $it")
+            }, {
+                Log.d("TEST_OF_LOADING_DATA", "Failure: ${it.message}")
+            })
         compositeDisposable.add(disposable)
     }
 
